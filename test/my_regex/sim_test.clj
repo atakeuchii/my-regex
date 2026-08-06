@@ -3,6 +3,7 @@
             [my-regex.sim :as sim]))
 
 (defn- m? [pattern s] (sim/matches-pattern? pattern s))
+(defn- f? [pattern s] (sim/find-pattern? pattern s))
 
 (deftest literals-and-dot
   (is (m? "a" "a"))
@@ -52,3 +53,41 @@
   (is (m? "a|" ""))
   (is (m? "a()" "a"))              ; 空グループ
   (is (m? "(a*)*" "aaa")))         ; ε ループでも停止
+
+(deftest char-classes
+  (is (m? "[abc]" "b"))
+  (is (not (m? "[abc]" "d")))
+  (is (m? "[a-z]+" "hello"))
+  (is (not (m? "[a-z]+" "Hello")))       ; 大文字は範囲外
+  (is (m? "[^0-9]+" "abc"))
+  (is (not (m? "[^0-9]+" "ab3")))        ; 否定クラスは 3 で脱落
+  (is (m? "[\\dA-F]+" "9F0A"))           ; クラス内の短縮
+  (is (m? "[a-]" "-"))                    ; リテラルの -
+  (is (m? "\\s" " "))
+  (is (m? "\\S" "a"))
+  (is (not (m? "\\S" " "))))
+
+(deftest bounded-quant
+  (is (m? "a{3}" "aaa"))
+  (is (not (m? "a{3}" "aa")))
+  (is (m? "a{2,}" "aaaaa"))
+  (is (not (m? "a{2,}" "a")))
+  (is (m? "a{1,3}" "aa"))
+  (is (not (m? "a{1,3}" "aaaa")))
+  (is (m? "a{0}" ""))
+  (is (m? "\\d{3}-\\d{4}" "123-4567"))
+  (is (not (m? "\\d{3}-\\d{4}" "12-4567"))))
+
+(deftest anchors-and-find
+  (is (f? "abc" "xxabcxx"))
+  (is (not (f? "^abc" "xxabc")))         ; 先頭でない
+  (is (f? "^abc" "abcxx"))
+  (is (f? "abc$" "xxabc"))
+  (is (not (f? "abc$" "abcxx")))         ; 末尾でない
+  (is (f? "^abc$" "abc"))
+  (is (not (f? "^abc$" "abcd")))
+  (is (f? "\\d+" "id=42"))
+  (is (not (f? "z" "abc")))
+  ;; matches?(完全一致) と find?(部分一致) の差
+  (is (not (m? "abc" "xxabcxx")))
+  (is (f? "abc" "xxabcxx")))

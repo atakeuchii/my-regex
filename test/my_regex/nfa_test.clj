@@ -6,9 +6,10 @@
   "状態が指す遷移先 id のリスト。"
   [st]
   (case (:type st)
-    :match       []
-    (:char :any) [(:out st)]
-    :split       [(:out st) (:out2 st)]))
+    :match []
+    (:char :any :class) [(:out st)]
+    :split [(:out st) (:out2 st)]
+    :assert [(:out st)]))
 
 (defn- well-formed?
   "穴(nil)が残っておらず、全遷移先が実在する状態を指すか。"
