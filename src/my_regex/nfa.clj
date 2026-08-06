@@ -75,6 +75,16 @@
     :group
     (compile-node b (:body node))
 
+    :anchor
+    (let [id (add-state! b {:type :assert :kind (:kind node) :out nil})]
+      {:start id :outs [[id :out]]})
+
+    :class
+    (let [id (add-state! b {:type :class
+                            :spec {:neg? (:neg? node) :items (:items node)}
+                            :out nil})]
+      {:start id :outs [[id :out]]})
+
     (throw (ex-info "compile-node: op not implemented yet"
                     {:op (:op node)}))))
 
@@ -90,6 +100,52 @@
 (defn from-pattern
   [s]
   (build (parser/parse s)))
+
+(defn- shorthand-accepts?
+  [which ch]
+  (let [c (int ch)
+        digit? (<= 48 c 57)
+        word? (or digit? (<= 65 c 90) (<= 97 c 122) (= ch \_))
+        space? (contains? #{\space \tab \newline \return \formfeed} ch)]
+    (case which
+      :d digit?
+      :w word?
+      :s space?
+      :D (not digit?)
+      :W (not word?)
+      :S (not space?))))
+
+(defn- item-accepts?
+  [item ch]
+  (case (:kind item)
+    :char (= ch (:ch item))
+    :range (<= (int (:lo item)) (int ch) (int (:hi item)))
+    :shorthand (shorthand-accepts? (:which item) ch)))
+
+(defn- class-accepts?
+  [spec ch]
+  (let [hit? (boolean (some #(item-accepts? % ch) (:items spec)))]
+    (if (:neg? spec)
+      (not hit?)
+      hit?)))
+
+(defn accepts?
+  [st ch]
+  (case (:type st)
+    :char (= ch (:ch st))
+    :any true
+    :class (class-accepts? (:spec st) ch)
+    false))
+
+(defn- class-label
+  [spec]
+  (str (when (:neg? spec) "^")
+       (apply str (map (fn [it]
+                         (case (:kind it)
+                           :char (str (:ch it))
+                           :range (str (:lo it) "-" (:hi it))
+                           :shorthand (str "\\" (name (:which it)))))
+                       (:items spec)))))
 
 (defn ->dot
   "NFA を Graphviz DOT 文字列に変換する。デバッグ用。"
@@ -116,6 +172,13 @@
                    (when (:out2 st)
                      (add (format "  %d -> %d [label=\"ε\",style=dashed];"
                                   id (:out2 st)))))
+        :class (add (format "  %d -> %d [label=\"[%s]\"];"
+                            id (:out st) (class-label (:spec st))))
+        :assert (add (format "  %d -> %d [label=\"%s\",style=dashed];"
+                             id (:out st)
+                             (case (:kind st) 
+                               :bol "^"
+                               :eol "$")))
         :match nil))
     (add "}")
     (str sb)))
