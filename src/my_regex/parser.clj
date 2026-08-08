@@ -213,13 +213,19 @@
         (fail!))
       (fail!))))
 
+(defn- maybe-lazy [cur node]
+  (if (= (peek-ch cur) \?)
+    (do (next-ch! cur) (assoc node :lazy? true))
+    node))
+
 (defn- expand-repetition
   "atom a を {min,max} 回に脱糖する。max=nil は上限なし。"
-  [a mn mx]
+  [a mn mx lazy?]
   (let [required (repeat mn a)
         optional (if (nil? mx)
-                   [(node-star a)]  ; {n,} -> 末尾にa*
-                   (repeat (- mx mn) (node-opt a))) ; {n,m} -> a? を(m-n)個
+                   [(cond-> (node-star a) lazy? (assoc :lazy? true))]  ; {n,} -> 末尾にa*
+                   (repeat (- mx mn)
+                           (cond-> (node-opt a) lazy? (assoc :lazy? true)))) ; {n,m} -> a? を(m-n)個
         parts (vec (concat required optional))]
     (case (count parts)
       0 {:op :empty}
@@ -232,13 +238,15 @@
   (let [a (parse-atom cur)
         c (peek-ch cur)]
     (case c
-      \* (do (next-ch! cur) (node-star a))
-      \+ (do (next-ch! cur) (node-plus a))
-      \? (do (next-ch! cur) (node-opt a))
+      \* (do (next-ch! cur) (maybe-lazy cur (node-star a)))
+      \+ (do (next-ch! cur) (maybe-lazy cur (node-plus a)))
+      \? (do (next-ch! cur) (maybe-lazy cur (node-opt a)))
       \{ (if-let [{:keys [min max]} (try-parse-braces! cur)]
            (do (when (and max (< max min))
                  (throw (ex-info "bad repetition range {min>max}" {:min min :max max})))
-               (expand-repetition a min max))
+               (let [lazy? (= (peek-ch cur) \?)]
+                 (when lazy? (next-ch! cur))
+                 (expand-repetition a min max lazy?)))
            a)
       a)))
 
