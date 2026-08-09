@@ -1,22 +1,66 @@
 # my-regex
 
-A Clojure library designed to ... well, that part is up to you.
+Clojure で書いた正規表現エンジン。オートマトン方式（Thompson NFA → Pike VM）で、
+入力長に対して**線形時間**でマッチする。RE2 や Go の `regexp` と同じ系譜。
 
-## Usage
+## できること
 
-FIXME
+- リテラル / `.` / 文字クラス `[a-z]` `[^0-9]` / `\d \w \s`（と否定）
+- 連接 / 選択 `|` / グループ `( )`（キャプチャ）
+- 量化子 `* + ?` `{n}` `{n,}` `{n,m}`、および lazy 版 `*?` など
+- アンカー `^ $`
+- 完全一致・部分一致、キャプチャグループの抽出
 
-## License
+## できないこと（設計上の割り切り）
 
-Copyright © 2026 FIXME
+- 後方参照 `\1`：正規言語を超え、線形時間と両立しない（RE2/Go も非対応）
+- 先読み・後読み、名前付きグループ：未実装（ストレッチ）
 
-This program and the accompanying materials are made available under the
-terms of the Eclipse Public License 2.0 which is available at
-http://www.eclipse.org/legal/epl-2.0.
+## 使い方
 
-This Source Code may also be made available under the following Secondary
-Licenses when the conditions for such availability set forth in the Eclipse
-Public License, v. 2.0 are satisfied: GNU General Public License as published by
-the Free Software Foundation, either version 2 of the License, or (at your
-option) any later version, with the GNU Classpath Exception which is available
-at https://www.gnu.org/software/classpath/license.html.
+```clojure
+(require '[my-regex.core :as core])
+(core/re-matches "(\\d{4})-(\\d{2})-(\\d{2})" "2024-08-09")
+(core/re-find "(\\d{4})-(\\d{2})-(\\d{2})" "date: 2024-08-09")
+(core/matches? "[a-z]+" "hello")
+(let [p (core/compile "\\d+")]
+  [(core/find? p "a1")
+   (core/find? p "bb")])
+```
+
+## 設計
+
+正規表現文字列 → AST（再帰下降パーサ）→ NFA（Thompson 構成法）→
+線形時間シミュレーション、およびバイトコードにコンパイルして Pike VM で実行。
+キャプチャは capture slot 付きスレッド、greedy/lazy は split の分岐順で表現。
+
+### なぜ線形か
+
+ありうる状態を集合で同時に進めるため、経路が指数的にあっても状態数で頭打ち。
+O(パターン長 × 入力長)。
+
+### バックトラック vs オートマトン
+
+破滅的バックトラックを起こす古典パターン `(a+)+$` に、マッチしない入力
+（`"a"×n + "!"`）を与えて計測。n を +2 するごとにバックトラックは約4倍に
+膨れ上がる一方、本実装（オートマトン方式）は入力長にほぼ比例したまま。
+
+pattern = `(a+)+$`, input = `"a"×n + "!"`（必ず非マッチ）
+
+| n  | backtrack (ms) | sim (ms) | vm (ms) | backtrack ÷ vm |
+|---:|---------------:|---------:|--------:|---------------:|
+| 5  |          0.759 |   0.0278 |  0.0301 |            25× |
+| 10 |          5.147 |   0.0537 |  0.0330 |           156× |
+| 15 |         29.234 |   0.0757 |  0.0493 |           593× |
+| 18 |        232.173 |   0.0896 |  0.0570 |         4,074× |
+| 20 |      1,083.202 |   0.1051 |  0.0670 |        16,180× |
+| 22 |      3,839.460 |   0.1094 |  0.0693 |        55,401× |
+| 24 |     15,291.457 |   0.1240 |  0.0824 |       185,666× |
+| 26 |     62,761.811 |   0.1361 |  0.0872 |       719,700× |
+
+※ 数値は環境により変動する。
+
+## モジュール
+
+- `parser` 文字列→AST / `nfa` Thompson構成 / `sim` NFAシミュレーション
+- `compile` AST→バイトコード / `vm` Pike VM / `backtrack` 対比用 / `core` 公開API
