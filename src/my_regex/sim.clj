@@ -13,27 +13,6 @@
     :bol (:at-start? ctx)
     :eol (:at-end? ctx)))
 
-;; (defn- eps-closure
-;;   "状態 id 集合 ids から、ε(split)遷移だけで到達できる全状態を集める。
-;;    split は両分岐へ展開し、char/any/match はそこで止める（=フロンティア）。
-;;    訪問済み seen で二重展開を防ぎ、ε ループでも停止する。"
-;;   [states ids ctx]
-;;   (loop [seen #{}
-;;          stack (vec ids)]
-;;     (if-let [id (peek stack)]
-;;       (if (seen id)
-;;         (recur seen (pop stack))
-;;         (let [st (get states id)
-;;               seen' (conj seen id)]
-;;           (case (:type st)
-;;             :split (recur seen'
-;;                           (into (pop stack)
-;;                                 (remove nil? [(:out st) (:out2 st)])))
-;;             :assert (if (assert-ok? (:kind st) ctx)
-;;                       (recur seen' (conj (pop stack) (:out st)))
-;;                       (recur seen' (pop stack)))
-;;             (recur seen' (pop stack)))))
-;;       seen)))
 (defn- eps-closure
   "ids から ε(split)と、条件を満たす :assert を辿って到達できる状態を集める。
    ctx は現在位置（先頭/末尾）。char/any/class/match で止める。"
